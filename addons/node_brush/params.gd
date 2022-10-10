@@ -36,6 +36,8 @@ func paint_node(root: Node, selected: Node, position: Vector2) -> void:
 		source = _packed_scene
 	elif _type == 'node':
 		source = _ci
+	else:
+		assert(false)
 	
 	if !source:
 		printerr('Node Brush: No scene or node selected.')
@@ -88,6 +90,9 @@ func _add_instance(id: int, params: Dictionary) -> void:
 		ci = source.instance() as CanvasItem
 	elif source is CanvasItem:
 		ci = source.duplicate()
+	else:
+		assert(false)
+	
 	if !is_instance_valid(ci):
 		printerr('Node Brush: Scene/node is freed or invalid.')
 		return
@@ -137,9 +142,6 @@ func _on_node_copy_pressed() -> void:
 	_ci = ci.duplicate()
 	
 	_node_copy.text = _ci.name
-
-func _on_node_edit_pressed() -> void:
-	editor_interface.inspect_object(_ci)
 
 func _on_scene_selected(path: String) -> void:
 	_packed_scene = load(path)

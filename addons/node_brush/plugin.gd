@@ -17,19 +17,18 @@ func _init() -> void:
 	_button.toggle_mode = true
 	_button.connect('toggled', self, '_on_button_toggled')
 	_button.connect('gui_input', self, '_on_button_gui_input')
-	
 	_button.add_child(_params)
 
 func _ready() -> void:
 	_params.undo_redo = get_undo_redo()
 	_params.editor_interface = get_editor_interface()
 
+func _exit_tree() -> void:
+	make_visible(false)
+
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_PREDELETE:
 		_button.free()
-
-func _exit_tree() -> void:
-	make_visible(false)
 
 func handles(object: Object) -> bool:
 	return (object is Node) && !(object is Spatial)
@@ -61,7 +60,7 @@ func forward_canvas_gui_input(event: InputEvent) -> bool:
 	var viewport := root.get_parent() as Viewport
 	assert(viewport)
 	
-	var position := viewport.global_canvas_transform.affine_inverse()\
+	var position := viewport.global_canvas_transform.affine_inverse() \
 			.xform(e.position) as Vector2
 	
 	_params.paint_node(root, nodes[0], position)
@@ -72,7 +71,8 @@ func _on_button_toggled(button_pressed: bool) -> void:
 	_enabled = button_pressed
 
 func _on_button_gui_input(event: InputEvent) -> void:
-	if event is InputEventMouseButton && event.button_index == BUTTON_RIGHT:
+	if event is InputEventMouseButton && event.pressed \
+			&& event.button_index == BUTTON_RIGHT:
 		_params.rect_global_position = _button.rect_global_position \
 				+ Vector2(0, _button.rect_size.y)
 		_params.popup()
