@@ -1,148 +1,148 @@
-tool
-extends PopupDialog
+@tool
+extends PopupPanel
 
-var undo_redo: UndoRedo
-var editor_interface: EditorInterface
 
-var _type := 'scene' # scene | node
-var _mode := 'add_child' # add_child | next_sibling
+enum _SourceType {
+	SCENE,
+	NODE,
+}
 
-var _packed_scene: PackedScene
-var _ci: CanvasItem
+enum _PasteMode {
+	ADD_CHILD,
+	ADD_SIBLING,
+}
 
-var _instances := {}
-var _id := 0
+var undo_redo: EditorUndoRedoManager
 
-onready var _scene_select := $'%SceneSelect' as Button
-onready var _node_copy    := $'%NodeCopy'    as Button
+var _source_type: _SourceType
+var _source_scene: PackedScene
+var _source_node: CanvasItem
 
-var _file_dialog := EditorFileDialog.new()
-var _file_dialog_shown := false
+var _paste_mode: _PasteMode
 
-func _init() -> void:
-	_file_dialog.mode = EditorFileDialog.MODE_OPEN_FILE
-	_file_dialog.add_filter('*.tscn, *.scn; Scenes')
-	_file_dialog.connect('file_selected', self, '_on_scene_selected')
-	add_child(_file_dialog)
+var _file_dialog: EditorFileDialog
 
-func _notification(what: int) -> void:
-	if what == NOTIFICATION_PREDELETE:
-		if _ci:
-			_ci.free()
+@onready var _scene_check: CheckBox = %SceneCheck
+@onready var _scene_select: Button = %SceneSelect
+@onready var _node_check: CheckBox = %NodeCheck
+@onready var _node_copy: Button = %NodeCopy
+@onready var _add_child: CheckBox = %AddChild
+@onready var _add_sibling: CheckBox = %AddSibling
 
-func paint_node(root: Node, selected: Node, position: Vector2) -> void:
-	var source: Object
-	if _type == 'scene':
-		source = _packed_scene
-	elif _type == 'node':
-		source = _ci
-	else:
-		assert(false)
-	
-	if !source:
-		printerr('Node Brush: No scene or node selected.')
-		return
-	
+
+func _ready() -> void:
+	_file_dialog = EditorFileDialog.new()
+	_file_dialog.file_mode = EditorFileDialog.FILE_MODE_OPEN_FILE
+	_file_dialog.add_filter("*.tscn, *.scn; Scenes")
+	_file_dialog.file_selected.connect(_on_scene_selected)
+	add_sibling.call_deferred(_file_dialog)
+
+	_scene_check.pressed.connect(_set_source_type.bind(_SourceType.SCENE))
+	_node_check.pressed.connect(_set_source_type.bind(_SourceType.NODE))
+	_add_child.pressed.connect(_set_paste_mode.bind(_PasteMode.ADD_CHILD))
+	_add_sibling.pressed.connect(_set_paste_mode.bind(_PasteMode.ADD_SIBLING))
+
+
+func _notification(p_what: int) -> void:
+	if p_what == NOTIFICATION_PREDELETE:
+		if is_instance_valid(_source_node):
+			_source_node.free()
+
+
+func paint_node(p_root: Node, p_selected: Node, p_position: Vector2) -> void:
 	var parent: Node
-	var prev_sib: Node
-	
-	if _mode == 'add_child':
-		parent = selected
-	elif _mode == 'next_sibling':
-		if selected == root:
-			printerr('Node Brush: Cannot add a sibling to the root node.')
-			return
-		parent = selected.get_parent()
-		prev_sib = selected
+	var prev_sibling: Node
+	match _paste_mode:
+		_PasteMode.ADD_CHILD:
+			parent = p_selected
+		_PasteMode.ADD_SIBLING:
+			if p_selected == p_root:
+				printerr("Node Brush: Cannot add a sibling to the root node.")
+				return
+			parent = p_selected.get_parent()
+			prev_sibling = p_selected
+		_:
+			breakpoint
+
+	var action: String
+	var instance: CanvasItem
+	match _source_type:
+		_SourceType.SCENE:
+			if not is_instance_valid(_source_scene):
+				printerr("Node Brush: No scene selected.")
+				return
+			var node: Node = _source_scene.instantiate()
+			if node is not CanvasItem:
+				printerr("Node Brush: Scene root must be a CanvasItem.")
+				node.free()
+				return
+			action = "Node Brush: Add child scene"
+			instance = node
+		_SourceType.NODE:
+			if not is_instance_valid(_source_node):
+				printerr("Node Brush: No node selected.")
+				return
+			action = "Node Brush: Add child node"
+			instance = _source_node.duplicate()
+		_:
+			breakpoint
+
+	undo_redo.create_action(action)
+
+	if is_instance_valid(prev_sibling):
+		undo_redo.add_do_method(prev_sibling, &"add_sibling", instance, true)
 	else:
-		assert(false)
-	
-	_id += 1
-	
-	undo_redo.create_action('Node Brush: Add child scene/node')
-	undo_redo.add_do_method(self, '_add_instance', _id, {
-		source   = source,
-		root     = root,
-		parent   = parent,
-		prev_sib = prev_sib,
-		position = position.snapped(Vector2(8, 8)),
-	})
-	undo_redo.add_undo_method(self, '_remove_instance', _id)
+		undo_redo.add_do_method(parent, &"add_child", instance, true)
+	undo_redo.add_do_reference(instance)
+	undo_redo.add_do_property(instance, &"owner", p_root)
+	undo_redo.add_do_property(instance, &"global_position", p_position)
+	if is_instance_valid(prev_sibling):
+		undo_redo.add_do_method(EditorInterface, &"edit_node", instance)
+
+	undo_redo.add_undo_method(parent, &"remove_child", instance)
+	if is_instance_valid(prev_sibling):
+		undo_redo.add_undo_method(EditorInterface, &"edit_node", p_selected)
+
 	undo_redo.commit_action()
 
-func _add_instance(id: int, params: Dictionary) -> void:
-	var source:   Object  = params.source
-	var root:     Node    = params.root
-	var parent:   Node    = params.parent
-	var prev_sib: Node    = params.prev_sib
-	var position: Vector2 = params.position
-	
-	if !is_instance_valid(root) || !is_instance_valid(parent):
-		printerr('Node Brush: Parent node or scene root has been freed.')
-		return
-	
-	if prev_sib && !is_instance_valid(prev_sib):
-		printerr('Node Brush: The previous sibling has been freed. ' \
-				+ 'The node is added to the end.')
-	
-	var ci: CanvasItem
-	if source is PackedScene:
-		ci = source.instance() as CanvasItem
-	elif source is CanvasItem:
-		ci = source.duplicate()
-	else:
-		assert(false)
-	
-	if !is_instance_valid(ci):
-		printerr('Node Brush: Scene/node is freed or invalid.')
-		return
-	
-	_instances[id] = ci
-	
-	if is_instance_valid(prev_sib):
-		parent.add_child_below_node(prev_sib, ci)
-	else:
-		parent.add_child(ci)
-	ci.owner = root
-	
-	if ci is Node2D:
-		ci.global_position = position
-	elif ci is Control:
-		ci.rect_global_position = position
-	
-	if is_instance_valid(prev_sib):
-		editor_interface.edit_node(ci)
 
-func _remove_instance(id: int) -> void:
-	var ci := _instances.get(id) as CanvasItem
-	if is_instance_valid(ci):
-		ci.queue_free()
-	_instances.erase(id)
+func _set_source_type(p_source_type: _SourceType) -> void:
+	_source_type = p_source_type
+	_scene_select.disabled = _source_type != _SourceType.SCENE
+	_node_copy.disabled = _source_type != _SourceType.NODE
+
+
+func _set_paste_mode(p_paste_mode: _PasteMode) -> void:
+	_paste_mode = p_paste_mode
+
 
 func _on_scene_select_pressed() -> void:
-	if _file_dialog_shown:
-		_file_dialog.popup()
-	else:
-		_file_dialog.popup_centered(Vector2(1024, 640))
-		_file_dialog_shown = true
+	hide()
+	_file_dialog.popup_file_dialog()
+
+
+func _on_scene_selected(p_path: String) -> void:
+	_source_scene = load(p_path)
+	_scene_select.text = p_path.get_file()
+
 
 func _on_node_copy_pressed() -> void:
-	var nodes := editor_interface.get_selection().get_selected_nodes()
-	if nodes.size() != 1:
-		printerr('Node Brush: Select a single CanvasItem.')
+	var selected_nodes: Array[Node] = EditorInterface.get_selection().get_selected_nodes()
+	if selected_nodes.size() != 1:
+		printerr("Node Brush: Select a single CanvasItem.")
 		return
-	
-	var ci := nodes[0] as CanvasItem
-	if !ci:
-		printerr('Node Brush: Select a single CanvasItem.')
-		return
-	
-	if _ci:
-		_ci.free()
-	_ci = ci.duplicate()
-	
-	_node_copy.text = _ci.name
 
-func _on_scene_selected(path: String) -> void:
-	_packed_scene = load(path)
-	_scene_select.text = path.get_file()
+	var source: CanvasItem = selected_nodes[0] as CanvasItem
+	if not is_instance_valid(source):
+		printerr("Node Brush: Select a single CanvasItem.")
+		return
+
+	if source.get_child_count() > 0:
+		printerr("Node Brush: Copying node branches is not supported yet.")
+		return
+
+	if is_instance_valid(_source_node):
+		_source_node.free()
+	_source_node = source.duplicate()
+
+	_node_copy.text = _source_node.name
