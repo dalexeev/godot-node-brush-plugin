@@ -2,7 +2,13 @@
 
 A plugin for quick placement of 2D nodes in the editor.
 
-Compatible with Godot **4.3 rc 1**.
+Compatible with Godot **4.6**.
+
+> [!NOTE]
+> Since Godot 4.7, [2D scene painter](https://godotengine.org/releases/4.7/#feature_scene_painter_tool)
+> is available out of the box. Therefore, this plugin is no longer supported.
+
+## About
 
 See [godotengine/godot-proposals#5553](https://github.com/godotengine/godot-proposals/issues/5553).
 

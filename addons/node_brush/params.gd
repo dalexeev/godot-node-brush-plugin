@@ -89,18 +89,18 @@ func paint_node(p_root: Node, p_selected: Node, p_position: Vector2) -> void:
 
 	undo_redo.create_action(action)
 
-	if is_instance_valid(prev_sibling):
+	if _paste_mode == _PasteMode.ADD_SIBLING:
 		undo_redo.add_do_method(prev_sibling, &"add_sibling", instance, true)
 	else:
 		undo_redo.add_do_method(parent, &"add_child", instance, true)
 	undo_redo.add_do_reference(instance)
 	undo_redo.add_do_property(instance, &"owner", p_root)
 	undo_redo.add_do_property(instance, &"global_position", p_position)
-	if is_instance_valid(prev_sibling):
+	if _paste_mode == _PasteMode.ADD_SIBLING:
 		undo_redo.add_do_method(EditorInterface, &"edit_node", instance)
 
 	undo_redo.add_undo_method(parent, &"remove_child", instance)
-	if is_instance_valid(prev_sibling):
+	if _paste_mode == _PasteMode.ADD_SIBLING:
 		undo_redo.add_undo_method(EditorInterface, &"edit_node", p_selected)
 
 	undo_redo.commit_action()
